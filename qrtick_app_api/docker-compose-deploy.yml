@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  qrtick:
+    build:
+      context: .
+    restart: always
+    container_name: qrtick
+    ports:
+      - "8000:8000"
+    volumes:
+      - static-data:/vol/web
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             python manage.py makemigrations &&
+             python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000
+             "
+    environment:
+      - DB_HOST=pgdb
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DEBUG=${DEBUG}
+    depends_on:
+      - pgdb
+
+  celery:
+    container_name: celery
+    restart: always
+    build:
+      context: .
+    command: celery -A qrtick worker --loglevel=info
+    volumes:
+      - ./qrtick:/usr/src/qrtick
+    environment:
+      - SECRET_KEY=devsecretkey
+      - DB_HOST=pgdb
+      - DB_NAME=qrtick_db
+      - DB_USER=postgres
+      - DB_PASS=supersecretpassword
+    depends_on:
+      - pgdb
+      - redis
+      - qrtick
+
+  pgdb:
+    image: postgres:14.3-bullseye
+    restart: always
+    container_name: pgdb
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=qrtick_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=supersecretpassword
+    volumes:
+      - ./qrtick/qrtick_app/migrations/:/docker-entrypoint-initdb.d/
+      - pgdata:/var/lib/postgresql/data/
+
+  redis:
+    container_name: redis
+    image: redis:7.0.0-bullseye
+
+volumes:
+  pgdata:
